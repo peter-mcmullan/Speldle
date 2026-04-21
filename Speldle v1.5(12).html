@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>Speldle</title>
+    <style>
+        :root {
+            --correct: #6aaa64; --wrong: #e74c3c; --missing: #f39c12;
+            --extra: #95a5a6; --swap: #9b59b6; --bg: #f8fafc; --accent: #3498db;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding-bottom: 40px;
+            touch-action: manipulation;
+        }
+
+        #confetti-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 999; }
+
+        /* ── PERSISTENT HEADER ── */
+        #site-header {
+            width: 90%;
+            max-width: 550px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px 0 4px;
+        }
+
+        .logo { display: flex; justify-content: center; gap: 4px; -webkit-user-select: none; user-select: none; }
+        .logo-tile { width: 34px; height: 38px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 1.2em; border-radius: 6px; }
+        .logo-g { background: var(--correct); }
+        .logo-y { background: var(--swap); }
+        .logo-e { background: var(--extra); }
+
+        /* ── GAME CARD ── */
+        .game-card {
+            background: white; padding: 24px 30px 30px; border-radius: 24px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.06); text-align: center;
+            width: 90%; max-width: 550px; z-index: 1; margin-top: 10px;
+        }
+
+        .setup-area { display: flex; flex-direction: column; gap: 12px; text-align: left; }
+
+        .mode-toggle-wrap {
+            display: flex; align-items: center; gap: 8px;
+        }
+        .mode-toggle {
+            display: flex; align-items: center; gap: 10px;
+            background: #f1f5f9; padding: 12px 14px; border-radius: 12px;
+            cursor: pointer; font-size: 0.95em;
+            transition: background 0.2s, color 0.2s;
+        }
+        .mode-toggle.active {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+        .mode-toggle.active strong { color: #b91c1c; }
+        .mode-toggle input { width: auto; margin: 0; accent-color: var(--accent); transform: scale(1.2); }
+
+        select, textarea, input[type="text"].standard-input {
+            width: 100%; padding: 14px; border: 2px solid #e2e8f0;
+            border-radius: 12px; font-size: 1em; font-family: inherit; background: white; outline: none;
+        }
+        select:focus, textarea:focus, input:focus { border-color: var(--accent); }
+
+        .ticker-tape { display: flex; width: 100%; height: 8px; background: #e2e8f0; margin-bottom: 15px; border-radius: 4px; overflow: hidden; }
+        .ticker-segment { flex: 1; border-right: 1px solid white; transition: background 0.4s; }
+
+        .word-display { font-size: 2.8em; font-weight: 800; color: #1e293b; margin: 15px 0; min-height: 70px; word-wrap: break-word; }
+        .instruction { color: #94a3b8; text-transform: uppercase; font-weight: bold; letter-spacing: 2px; font-size: 0.8em; }
+
+        .spell-input { width: 100%; padding: 15px; font-size: 1.5em; border: 2px solid #e2e8f0; border-radius: 14px; text-align: center; outline: none; }
+        .spell-input:disabled { background: #f1f5f9; cursor: not-allowed; color: #94a3b8; }
+
+        button { background: var(--accent); color: white; border: none; padding: 16px; border-radius: 12px; font-size: 1.1em; font-weight: 700; cursor: pointer; width: 100%; transition: opacity 0.2s; }
+        button:active { opacity: 0.8; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .enter-btn { background: var(--correct); margin-top: 10px; }
+        .secondary-btn { background: #94a3b8; margin-top: 8px; }
+        .save-btn { background: #2ecc71; margin-top: 5px; font-size: 0.9em; padding: 10px; }
+        .create-toggle-btn { background: #64748b; margin-top: 5px; font-size: 0.9em; padding: 10px; }
+
+        .library-title { font-weight: bold; font-size: 0.8em; color: #64748b; margin-top: 15px; text-transform: uppercase; }
+        .saved-list-item { display: flex; justify-content: space-between; align-items: center; background: #f1f5f9; padding: 10px 15px; border-radius: 10px; margin-top: 5px; }
+        .list-name { font-weight: 600; font-size: 0.9em; color: #334155; }
+        .del-btn { background: var(--wrong); width: auto; padding: 6px 10px; font-size: 0.7em; }
+
+        #timer-wrap { font-variant-numeric: tabular-nums; color: #e74c3c; font-weight: bold; }
+        #in-game-streak { color: #e67e22; font-weight: bold; display: none; }
+
+        .history-container { margin-top: 20px; display: flex; flex-direction: column; gap: 8px; }
+        .feedback-row { display: flex; justify-content: center; gap: 3px; }
+        .tile { width: 22px; height: 28px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: 700; color: white; font-size: 0.85em; text-transform: uppercase; }
+
+        /* ── COLOUR KEY ── */
+        .feedback-key {
+            margin-top: 20px; padding-top: 14px; border-top: 1px solid #e2e8f0;
+            display: flex; flex-direction: column; align-items: center; gap: 6px;
+        }
+        .key-item {
+            padding: 6px 16px; border-radius: 20px; color: white;
+            font-size: 0.75em; font-weight: 800; text-transform: uppercase;
+            width: 180px; letter-spacing: 0.5px; text-align: center;
+        }
+
+        /* ── RESULTS ── */
+        .results-list { text-align: left; margin: 20px 0; max-height: 300px; overflow-y: auto; background: #f8fafc; border-radius: 12px; padding: 10px; }
+        .result-item { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #e2e8f0; font-size: 1em; }
+        .result-item:last-child { border-bottom: none; }
+
+        /* ── MODAL ── */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .streak-modal { background: white; padding: 40px; border-radius: 30px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.3); transform: scale(0.9); animation: popIn 0.4s forwards; max-width: 300px; width: 80%; }
+        @keyframes popIn { to { transform: scale(1); } }
+
+        #streak-stat { color: #e67e22; font-weight: 800; font-size: 0.9em; }
+        .hidden { display: none !important; }
+
+        /* ── VERSION / DEV PANEL ── */
+        .version-tag {
+            position: fixed; bottom: 10px; right: 10px;
+            font-size: 0.7em; color: #cbd5e1; font-weight: bold;
+            cursor: pointer; user-select: none; -webkit-user-select: none;
+        }
+        #dev-panel {
+            width: 90%; max-width: 550px; margin-top: 12px;
+            display: none; flex-direction: row; gap: 10px;
+        }
+        #dev-panel button { font-size: 0.85em; padding: 12px; border-radius: 12px; }
+        .dev-skip-btn { background: #f39c12; }
+        .dev-reset-btn { background: var(--wrong); }
+
+        /* ── HARD MODE WORD OVERLAY ── */
+        .game-card { position: relative; }
+        #word-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 9999;
+            pointer-events: none;
+            opacity: 0;
+            border-radius: 24px;
+            transition: opacity 0.35s ease;
+        }
+        #word-overlay-text {
+            font-size: clamp(2.4em, 8vw, 4em);
+            font-weight: 800;
+            color: white;
+            background: rgba(30, 41, 59, 0.82);
+            padding: 22px 40px;
+            border-radius: 20px;
+            letter-spacing: 3px;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+
+        /* ── WORD LIST PREVIEW MODAL ── */
+        #wordlist-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.55); display: flex; align-items: center;
+            justify-content: center; z-index: 1000;
+        }
+        #wordlist-modal-box {
+            background: white; border-radius: 24px; padding: 24px;
+            width: 88%; max-width: 480px; max-height: 80vh;
+            display: flex; flex-direction: column;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+        }
+        #wordlist-modal-title {
+            font-weight: 800; font-size: 1em; color: #1e293b;
+            margin-bottom: 14px; text-align: center;
+        }
+        #wordlist-modal-words {
+            display: flex; flex-wrap: wrap; gap: 8px;
+            overflow-y: auto; padding: 4px 2px;
+        }
+        .word-chip {
+            background: #f1f5f9; border-radius: 8px;
+            padding: 6px 12px; font-size: 0.9em; font-weight: 600; color: #334155;
+        }
+        #wordlist-close-btn {
+            margin-top: 18px; background: #94a3b8;
+        }
+
+
+        /* ── PERSONAL BESTS ── */
+        .pb-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 14px; background: #f8fafc; border-radius: 12px; margin-bottom: 8px;
+            border: 2px solid #e2e8f0;
+        }
+        .pb-row.pb-new { border-color: var(--correct); background: #f0fdf4; }
+        .pb-list-name { font-weight: 700; color: #1e293b; font-size: 0.9em; }
+        .pb-list-mode { font-size: 0.7em; color: #94a3b8; font-weight: 600; text-transform: uppercase; margin-top: 2px; }
+        .pb-time { font-size: 1.3em; font-weight: 800; color: var(--correct); font-variant-numeric: tabular-nums; }
+        .pb-new-badge { font-size: 0.65em; background: var(--correct); color: white; border-radius: 6px; padding: 2px 7px; font-weight: 800; margin-left: 8px; vertical-align: middle; }
+        .no-stats { text-align: center; color: #94a3b8; font-size: 0.9em; padding: 30px 0; }
+
+        /* ── PERSISTENT HEADER ── */
+        #site-header {
+            width: 90%; max-width: 550px;
+            display: flex; align-items: center;
+            justify-content: space-between;
+            padding: 16px 0 6px;
+        }
+        .logo { display: flex; justify-content: center; gap: 4px; -webkit-user-select: none; user-select: none; }
+
+
+        /* ── PROFILE BADGE (header) ── */
+        .profile-badge {
+            cursor: pointer; transition: transform 0.15s;
+            border: none; padding: 0;
+            font-size: 1.3em; line-height: 1;
+        }
+        .profile-badge:hover { transform: translateY(-2px); }
+
+        /* ── PROFILE MODAL ── */
+        #profile-modal {
+            align-items: flex-start;
+            padding-top: 80px;
+        }
+        #profile-modal .modal-card {
+            background: white; padding: 28px; border-radius: 24px;
+            width: 85%; max-width: 420px; text-align: center;
+            max-height: 80vh; overflow-y: auto;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+        }
+        .emoji-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+        .emoji-btn {
+            font-size: 1.8em; background: #f8fafc; border: 2px solid #e2e8f0;
+            border-radius: 12px; padding: 10px; cursor: pointer; width: 100%;
+            transition: background 0.15s;
+        }
+        .emoji-btn:hover { background: #e2e8f0; }
+        .emoji-btn.active-profile-btn { border-color: var(--correct); background: #f0fdf4; }
+        .profile-change-btn {
+            font-size: 0.6em; background: #94a3b8; color: white; border: none;
+            border-radius: 4px; padding: 3px 6px; margin-top: 4px; cursor: pointer; width: 100%;
+        }
+        .profile-delete-btn {
+            font-size: 0.6em; background: #fee2e2; color: var(--wrong); border: none;
+            border-radius: 4px; padding: 3px 6px; margin-top: 2px; cursor: pointer; width: 100%;
+        }
+        #player-stats { text-align: center; color: #64748b; font-size: 0.85em; margin: 0; }
+    </style>
+</head>
+<body>
+
+<canvas id="confetti-canvas"></canvas>
+<div class="version-tag" id="version-tag">v1.5</div>
+
+<!-- ── STREAK POPUP ── -->
+<div id="streak-popup" class="modal-overlay hidden">
+    <div class="streak-modal">
+        <h2 style="margin:0; color:#64748b;">STREAK!</h2>
+        <span id="popup-streak-count" style="font-size: 5em; display: block; line-height: 1; margin: 10px 0; color: #e67e22;">1</span>
+        <p style="font-weight:bold; color:#1e293b; margin-bottom: 5px;">Days in a row!</p>
+        <button onclick="closeStreakPopup()" style="background:var(--correct);">Awesome!</button>
+    </div>
+</div>
+
+<!-- ── PERSISTENT HEADER ── -->
+<div id="site-header">
+    <div class="logo">
+        <div class="logo-tile logo-g">S</div><div class="logo-tile logo-g">P</div><div class="logo-tile logo-g">E</div><div class="logo-tile logo-g">L</div><div class="logo-tile logo-e">D</div><div class="logo-tile logo-g">L</div><div class="logo-tile logo-e">E</div>
+    </div>
+    <button id="active-profile" class="profile-badge logo-tile logo-g" onclick="handleProfileClick()">👤</button>
+</div>
+
+<!-- ── PROFILE MODAL ── -->
+<div id="profile-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+        <h2 id="modal-title" style="margin-top:0; color:#1e293b; text-align:center;">Who is Playing?</h2>
+        <div id="current-profiles" class="emoji-grid"></div>
+        <div id="emoji-picker-section" class="hidden">
+            <hr style="margin:16px 0; border:0; border-top:1px solid #e2e8f0;">
+            <div class="emoji-grid" id="available-emoji-grid"></div>
+        </div>
+        <button id="profile-cancel-btn" onclick="closeProfileModal()" class="secondary-btn" style="margin-top:14px;">Cancel</button>
+    </div>
+</div>
+
+<!-- ── GAME CARD ── -->
+<div class="game-card">
+    <div id="word-overlay"><div id="word-overlay-text"></div></div>
+
+    <!-- SETUP SCREEN -->
+    <div id="setup-screen" class="setup-area">
+        <div style="margin-bottom: 8px; display:flex; flex-direction:column; align-items:center; gap:2px; position:relative;">
+            <span id="streak-stat" style="font-weight:800; color:#e67e22; display:none;"></span>
+            <span id="player-stars" style="font-size:0.85em; color:#64748b; font-weight:600; margin-top:5px;"></span>
+
+        </div>
+
+        <label style="font-weight: bold; color: #64748b; font-size: 0.8em;">CHOOSE WORD LIST</label>
+        <div style="display:flex; gap:8px; align-items:stretch;">
+        <select id="list-selector" style="flex:1;">
+            <option value="week1" selected>Year 4 Homework - Week 1</option>
+            <optgroup label="National UK Curriculum">
+                <option value="y1">Year 1</option>
+                <option value="y2">Year 2</option>
+                <option value="y34">Year 3 &amp; 4</option>
+                <option value="y56">Year 5 &amp; 6</option>
+                <option value="y78">Year 7 &amp; 8</option>
+                <option value="y9">Year 9</option>
+                <option value="gcse">GCSE</option>
+            </optgroup>
+            <optgroup label="Splash Learn">
+                <option value="sl_pre">Splash: Preschool</option>
+                <option value="sl_rec">Splash: Reception</option>
+                <option value="sl_y1">Splash: Year 1</option>
+                <option value="sl_y2">Splash: Year 2</option>
+                <option value="sl_y3">Splash: Year 3</option>
+                <option value="sl_y4">Splash: Year 4</option>
+                <option value="sl_y5">Splash: Year 5</option>
+            </optgroup>
+            <optgroup label="My Custom Lists" id="optgroup-saved"></optgroup>
+        </select>
+        <button id="view-words-btn" onclick="openWordlistModal()" title="View word list" style="width:42px; min-width:42px; padding:0; background:#e2e8f0; color:#475569; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' stroke-linecap='round'><line x1='3' y1='6' x2='21' y2='6'/><line x1='3' y1='12' x2='21' y2='12'/><line x1='3' y1='18' x2='21' y2='18'/></svg></button>
+        </div>
+
+        <button id="toggle-create-btn" class="create-toggle-btn">➕ Create New List</button>
+        <div id="custom-input-wrap" class="hidden">
+            <input type="text" id="custom-name" class="standard-input" placeholder="List Name (e.g. Science)" style="margin-bottom:8px;">
+            <textarea id="custom-words" placeholder="Enter words separated by commas or spaces..." style="height:80px;"></textarea>
+            <button id="save-list-btn" class="save-btn">💾 Save to Menu</button>
+            <div class="library-title">Manage Lists</div>
+            <div id="saved-lists-container"></div>
+        </div>
+
+        <div class="mode-toggle-wrap">
+            <label class="mode-toggle" style="flex:1; margin:0;">
+                <input type="checkbox" id="hard-mode">
+                <span><strong>Hard Mode</strong></span>
+            </label>
+            <button onclick="openStats()" style="width:auto; padding:0 14px; font-size:0.8em; background:#e2e8f0; color:#475569; border-radius:10px; white-space:nowrap; flex-shrink:0; align-self:stretch;">🕒 PBs</button>
+        </div>
+
+        <button id="start-btn" style="margin-top:4px;">Start Game</button>
+    </div>
+
+    <!-- GAME SCREEN -->
+    <div id="game-screen" class="hidden">
+        <div id="ticker" class="ticker-tape"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; color:#64748b; font-weight:700; font-size:0.8em; margin-bottom:10px;">
+            <span id="progress">WORD 0/0</span>
+            <span id="in-game-streak"></span>
+            <span id="timer-wrap" class="hidden">🕒 <span id="timer">00:00</span></span>
+            <span id="total-score">⭐ 0</span>
+        </div>
+        
+        <div id="word-box" class="word-display"></div>
+        <div id="input-area" class="hidden">
+            <input type="text" id="user-input" class="spell-input" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+            <button id="mobile-enter" class="enter-btn">Check</button>
+            
+            <button id="say-again-btn" class="secondary-btn">🔊 Hear Again</button>
+            <div id="history" class="history-container"></div>
+            <div id="dynamic-key" class="feedback-key hidden"></div>
+        </div>
+        <button id="hide-btn">Ready</button>
+    </div>
+
+    <!-- RESULTS SCREEN -->
+    <div id="results-screen" class="hidden">
+        <h2 style="color:#1e293b; margin-top:0;">Session Complete!</h2>
+        <div id="final-star-count" style="font-size: 2.2em; font-weight: bold; color: var(--accent); margin-bottom:6px;"></div>
+        <div id="final-time" style="font-weight: bold; color: #e74c3c; margin-bottom:10px;"></div>
+        <div class="results-list" id="results-list"></div>
+        <button id="retry-btn">Retry</button>
+        <button onclick="location.reload()" class="secondary-btn" style="margin-top:8px;">Menu</button>
+        
+    </div>
+
+    <!-- STATS SCREEN -->
+    <div id="stats-screen" class="hidden">
+        <h2 style="color:#1e293b; margin-top:0; text-align:center;">Personal Bests</h2>
+        <div id="stats-content"></div>
+        <button onclick="closeStats()" class="secondary-btn" style="margin-top:8px;">Back</button>
+        <button onclick="clearStats()" style="margin-top:8px; background:#fee2e2; color:var(--wrong); font-size:0.8em; padding:10px;">Reset Personal Bests</button>
+    </div>
+
+</div>
+
+<!-- ── DEV PANEL ── -->
+<div id="dev-panel">
+    <button class="dev-skip-btn" onclick="devSkip()">⏭ Skip Word</button>
+    <button class="dev-reset-btn" onclick="devReset()">🗑 Reset All Data</button>
+    <button style="background:#9b59b6; border-radius:12px; font-size:0.85em; padding:12px;" onclick="devAddStreak()">🔥 +1 Streak</button>
+</div>
+
+<div id="wordlist-modal" class="hidden">
+    <div id="wordlist-modal-box">
+        <div id="wordlist-modal-title"></div>
+        <div id="wordlist-modal-words"></div>
+        <button id="wordlist-close-btn" onclick="closeWordlistModal()">Close</button>
+    </div>
+</div>
+
+<script>
+    // ── WORD LISTS ──
+    const BUILTIN = {
+        week1: ["accident","believe","circle","different","early","favourite","grammar","heart","imagine","knowledge"],
+        sl_pre: ["cat","dog","bat","mat","hat","bag","fan","bed","sun","moon","tree","bird","cow","pig","fish","ant","bee","red","blue","green","pink","black","run","jump","hop","sit","play","hug","cry","big","small","fast","slow","mum","dad","baby","cup","car","box","ball","book","toy","milk","pen","key","rain","snow","hot","cold","wet","dry","fun","happy","sad","love","clap","kind","fox","frog","goat","duck","owl","desk","tub","mug","head","arm","leg","nose","lip","eye","toe","chair","kite","drum","ring","doll","soap","jar","sky","star","leaf","cloud","wind","light","water","sand","bug","man","nap","sip","dig","tag","nut","map","rod"],
+        sl_rec: ["and","the","can","man","ran","top","hop","mop","dad","mum","big","pig","fig","sit","hit","bit","lit","fit","fun","sun","not","pot","hot","got","lot","bat","cat","rat","hat","mat","bag","rag","tag","wag","lag","red","bed","fed","led","wed","pen","ten","hen","men","den","pet","net","bet","get","wet","box","fox","fix","mix","six","fast","last","past","best","rest","jump","bump","lump","dump","hump","clap","flap","snap","trap","wrap","play","stay","grey","day","way","hill","fill","bill","will","till","stop","drop","crop","shop","prop","frog","clog","blog","dog","hog","kite","bite","site","fight","light","help","self","belt","melt","felt"],
+        sl_y1: ["after","again","an","any","ask","back","because","been","before","best","both","by","call","came","could","day","does","don't","down","each","first","for","from","get","give","go","good","had","has","have","her","here","him","his","how","if","into","just","know","let","live","look","make","man","many","more","most","much","must","name","new","now","off","old","on","one","only","open","or","out","over","own","part","place","put","round","same","say","see","she","so","some","stop","take","tell","than","that","them","then","there","they","think","this","time","to","two","under","up","upon","us","use","very","want","was","we","well","went","were","what","when"],
+        sl_y2: ["about","above","across","afraid","almost","along","always","animal","around","before","believe","below","between","brother","brought","catch","child","children","clean","climb","close","clothes","coming","country","cousin","decide","different","door","down","early","earth","enough","every","family","father","field","find","follow","found","friendly","funny","garden","getting","gone","great","happy","heavy","high","home","house","hungry","idea","important","inside","invite","jumping","just","keep","kind","knew","last","learn","letter","light","listen","lunch","many","might","money","morning","myself","never","night","often","open","outside","people","picture","place","pretty","quickly","quiet","rain","ready","really","river","school","season","seven","should","slowly","something","story","suddenly","summer","teacher","there","these","they","tomorrow"],
+        sl_y3: ["curious","discover","thought","cheerful","balloon","garden","basket","courage","explore","borrow","journey","morning","clever","greatest","package","blanket","beautiful","gently","mountain","perfect","rescue","special","escape","forward","surprise","example","picture","favourite","bedroom","promise","protect","subject","welcome","sunshine","imagine","complete","birthday","harvest","evening","natural","improve","treasure","fountain","question","kindness","bicycle","forget","rainbow","remember","strength","freedom","laughter","happily","nervous","picnic","provide","village","slippery","quickly","collect","address","describe","friendly","musical","compare","popcorn","declare","pretend","cottage","arrival","educate","excited","feature","inspire","brilliant","victory","luggage","rainfall","happiness","finally","concern"],
+        sl_y4: ["audience","decision","brilliant","courage","neighbour","document","belief","happiness","describe","generous","careful","calendar","behave","citizen","conquer","century","moment","guidance","conflict","horizon","answer","gentle","interest","teacher","pattern","machine","reflect","consider","favourite","journey","confidence","forgive","hopeful","feature","rescue","explain","outside","instead","afraid","solution","achieve","complete","climate","unusual","distance","mention","frequent","ancient","assemble","terrible","discover","celebrate","children","balance","winter","perfect","explore","create","benefit","pretend","promise","provide","example","forward","include","increase","protect","combine","forever","excited","afford","quickly","remove","weather","improve","activity","effort","display","respond","laughter","inside","attempt","reward","arrange","freedom","address","treasure","exercise","harmony","flexible","disaster","action","location","resource"],
+        sl_y5: ["achieve","curiosity","harmony","eliminate","ancestor","gratitude","calendar","influence","evidence","conclude","environment","determination","discovery","community","exception","citizen","experiment","government","fantastic","calculate","important","adventure","ancient","available","compassion","chemical","attention","celebrate","accurate","frequently","inspiration","audience","consider","consumer","expression","develop","illustrate","allowance","continuous","honesty","describe","assembly","geography","interesting","foundation","analyse","happiness","generation","complaint","business","decision","intelligence","conquer","behaviour","assistance","citizenship","criticism","intelligent","ambition","identical","compare","forgiveness","inspire","electricity","direction","atmosphere","confidence","arrangement","document","application","neighbour","equality","conflict","horizon","strategy","biography","conclusion","magnificent","knowledge","freedom","victory","scientist","thoughtful","measurement","invention"],
+        y1: ["the","a","do","to","today","of","said","says","are","were","was","is","his","has","I","you","your","they","be","he","me","she","we","no","go","so","by","my","here","there","where","love","come","some","one","once","ask","friend","school","put","push","pull","full","house","our"],
+        y2: ["door","floor","poor","because","find","kind","mind","behind","child","children","wild","climb","most","only","both","old","cold","gold","hold","told","every","everybody","even","great","break","steak","pretty","beautiful","after","fast","last","past","father","class","grass","pass","plant","path","bath","hour","move","prove","improve","sure","sugar","eye","could","should","would","who","whole","any","many","clothes","busy","people","water","money","again","half","quarter"],
+        y34: ["actually","answer","appear","arrive","believe","bicycle","breath","breathe","build","busy","calendar","caught","centre","century","certain","circle","complete","consider","continue","decide","describe","different","difficult","disappear","early","earth","eight","eighth","enough","exercise","experience","experiment","extreme","famous","favourite","February","forward","fruit","grammar","group","guard","guide","heard","heart","height","history","imagine","increase","important","interest","island","knowledge","learn","length","library","material","medicine","mention","minute","natural","naughty","notice","occasion","occasionally","often","opposite","ordinary","particular","peculiar","perhaps","popular","position","possess","possession","possible","potatoes","pressure","probably","promise","purpose","quarter","question","recent","regular","reign","remember","sentence","separate","special","straight","strange","strength","suppose","surprise","therefore","though","although","thought","through","various","weight","woman","women"],
+        y56: ["accommodate","accompany","according","achieve","aggressive","amateur","ancient","apparent","appreciate","attached","available","average","awkward","bargain","bruise","category","cemetery","committee","communicate","community","competition","conscience","conscious","controversy","convenience","correspond","criticise","curiosity","definite","desperate","determined","develop","dictionary","disastrous","embarrass","environment","equipped","especially","exaggerate","excellent","existence","explanation","familiar","foreign","forty","frequently","government","guarantee","harass","hindrance","identity","immediate","individual","interfere","interrupt","language","leisure","lightning","marvellous","mischievous","muscle","necessary","neighbour","nuisance","occupy","occur","opportunity","parliament","persuade","physical","prejudice","privilege","profession","programme","pronunciation","queue","recognise","recommend","relevant","restaurant","rhyme","rhythm","sacrifice","secretary","shoulder","signature","sincere","soldier","stomach","sufficient","suggest","symbol","system","temperature","thorough","twelfth","variety","vegetable","vehicle","yacht"],
+        y78: ["absence","abundance","accommodate","achieve","acquire","address","aggressive","amateur","ancient","apparent","arctic","argument","ascend","audible","baggage","believe","bicycle","biscuit","bouillon","boundary","business","calendar","caught","character","choir","chord","colleague","column","concentrate","conscience","conscious","consequence","continuous","creation","cylinder","deceive","decide","definite","depth","descend","description","deteriorate","dialogue","dictionary","difficulty","disappear","disappoint","discipline","disease","distance"],
+        y9: ["adversary","aptitude","brackish","commotion","conspicuous","defiance","eavesdrop","ember","exhilaration","foresight","fragrance","grueling","habitation","ignite","illuminate","impending","imperious","jargon","luminous","malleable","meander","meticulous","monotonous","muster","outlandish","persistent","pristine","quell","recluse","recuperate","replenish","scarcity","serenity","somber","subside","swagger","tactic","translucent","uncanny","unsightly","versatile","vigilant","waft","zeal"],
+        gcse: ["aberration","acquiesce","alacrity","amity","appease","arcane","avarice","brusque","cajole","callous","candor","chide","circumspect","clandestine","coerce","coherent","complacency","confidant","connive","cumulative","debase","decry","deferential","demure","deride","despot","diligent","elated","eloquent","embezzle","empathy","enmity","erudite","extol","fabricate","feral","flabbergasted","forsake","fractious","furtive","gluttony","gratuitous","haughty","hypocrisy","impeccable","impertinent","implacable","impudent","incisive","indolent"]
+    };
+
+    const KEY_LABELS = {
+        wrong:   'Wrong letter',
+        swap:    'Swapped letters',
+        extra:   'Extra letter',
+        missing: 'Missing letter'
+    };
+
+    let activeWords = [], currentIndex = 0, attempts = 0, totalStars = 0,
+        inGameStreak = 0, state = "SETUP", inputLocked = false, sessionData = [];
+    let timerInterval, seconds = 0;
+    let currentErrorTypes = new Set();
+    let lastPool = null;
+
+    const userInput = document.getElementById('user-input');
+
+    // ── DEV PANEL: tap version tag 5× ──
+    let devTapCount = 0, devTapTimer = null;
+    document.getElementById('version-tag').addEventListener('click', () => {
+        devTapCount++;
+        clearTimeout(devTapTimer);
+        devTapTimer = setTimeout(() => { devTapCount = 0; }, 3000);
+        if (devTapCount >= 5) {
+            devTapCount = 0;
+            const p = document.getElementById('dev-panel');
+            p.style.display = p.style.display === 'flex' ? 'none' : 'flex';
+        }
+    });
+
+    function devSkip() {
+        if (state !== 'SPELL' && state !== 'READ') return;
+        inputLocked = true;
+        userInput.disabled = true; userInput.blur();
+        document.getElementById('mobile-enter').disabled = true;
+        sessionData.push({ word: activeWords[currentIndex], stars: 0 });
+        document.getElementById('ticker').children[currentIndex].style.background = 'var(--wrong)';
+        setTimeout(() => { currentIndex++; if (currentIndex < activeWords.length) startRound(); else endGame(); }, 600);
+    }
+
+    function devReset() {
+        if (!confirm('Reset streak and remove all saved lists?')) return;
+        localStorage.removeItem('speldle_streak');
+        localStorage.removeItem('speldle_last_date');
+        localStorage.removeItem('speldle_lib_v3');
+        updateStreakStat();
+        syncLibrary();
+        alert('Done!');
+    }
+
+
+    function devAddStreak() {
+        const uid = getCurrentUserId() || 'default';
+        const s = parseInt(localStorage.getItem(`speldle_streak_${uid}`) || '0') + 1;
+        localStorage.setItem(`speldle_streak_${uid}`, s);
+        localStorage.setItem(`speldle_last_date_${uid}`, new Date().toISOString());
+        updateStreakStat();
+    }
+
+    // ── WORD LIST PREVIEW ──
+    function openWordlistModal() {
+        const val = document.getElementById('list-selector').value;
+        let words = [];
+        if (val.startsWith('SAVED_')) {
+            const lib = JSON.parse(localStorage.getItem('speldle_lib_v3') || '{}');
+            const key = val.replace('SAVED_', '');
+            words = (lib[key] || '').split(/[\s,]+/).filter(w => w.length > 0);
+        } else {
+            words = BUILTIN[val] || [];
+        }
+        const sel = document.getElementById('list-selector');
+        const label = sel.options[sel.selectedIndex].text;
+        document.getElementById('wordlist-modal-title').innerText = label;
+        document.getElementById('wordlist-modal-words').innerHTML =
+            words.map(w => `<div class="word-chip">${w}</div>`).join('');
+        document.getElementById('wordlist-modal').classList.remove('hidden');
+    }
+    window.closeWordlistModal = () => document.getElementById('wordlist-modal').classList.add('hidden');
+    document.getElementById('wordlist-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeWordlistModal();
+    });
+
+
+
+
+
+    // ── PROFILE SYSTEM ──
+    const EMOJI_POOL = ['🐶','🐱','🦊','🦁','🐸','🐙','🦄','🐼','🐨','🐯',
+                        '🐮','🐷','🐵','🐣','🐝','🦋','🦖','🐢','🐬','🐠',
+                        '🐘','🦒','🦓','🐉','🍀','🍎','🍓','🍕','🍩','🍦',
+                        '⚽','🎨','🚀','🌈','⭐','🍄','🦉','🦩','🦕','🍪',
+                        '🎮','🎧','🛹','🎲','🏆','🌸','🎵','🧁','🍣','🥨'];
+
+    let profiles = JSON.parse(localStorage.getItem('speldle_profiles_v3') || '{}');
+    let currentProfileId = localStorage.getItem('speldle_active_user_v3') || null;
+    let editingProfileId = null;
+
+    function handleProfileClick() {
+        showProfileModal();
+    }
+
+    function showProfileModal() {
+        editingProfileId = null;
+        document.getElementById('modal-title').innerText = 'Who is Playing?';
+        document.getElementById('profile-cancel-btn').classList.remove('hidden');
+        document.getElementById('profile-modal').dataset.unskippable = 'false';
+        document.getElementById('current-profiles').classList.remove('hidden');
+        document.getElementById('emoji-picker-section').classList.add('hidden');
+        renderProfiles();
+        document.getElementById('profile-modal').classList.remove('hidden');
+    }
+
+    function showFirstTimeModal() {
+        editingProfileId = null;
+        document.getElementById('modal-title').innerText = 'Pick a Character';
+        document.getElementById('profile-cancel-btn').classList.add('hidden');
+        document.getElementById('profile-modal').dataset.unskippable = 'true';
+        document.getElementById('current-profiles').classList.add('hidden');
+        document.getElementById('emoji-picker-section').classList.remove('hidden');
+        renderAvailableEmojis();
+        document.getElementById('profile-modal').classList.remove('hidden');
+    }
+
+    function closeProfileModal() {
+        document.getElementById('profile-modal').classList.add('hidden');
+    }
+
+    function renderProfiles() {
+        const grid = document.getElementById('current-profiles');
+        grid.innerHTML = '';
+        Object.keys(profiles).forEach(id => {
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;';
+
+            const btn = document.createElement('button');
+            btn.className = 'emoji-btn' + (id === currentProfileId ? ' active-profile-btn' : '');
+            btn.innerText = id;
+            btn.onclick = () => selectProfile(id);
+
+            const changeBtn = document.createElement('button');
+            changeBtn.className = 'profile-change-btn';
+            changeBtn.innerText = 'Change';
+            changeBtn.onclick = e => { e.stopPropagation(); startEmojiChange(id); };
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'profile-delete-btn';
+            delBtn.innerText = 'Remove';
+            delBtn.onclick = e => { e.stopPropagation(); deleteProfile(id); };
+
+            wrapper.appendChild(btn);
+            wrapper.appendChild(changeBtn);
+            wrapper.appendChild(delBtn);
+            grid.appendChild(wrapper);
+        });
+
+        // Plus tile at end
+        const plus = document.createElement('button');
+        plus.className = 'emoji-btn';
+        plus.innerHTML = '<span style="font-size:1.4em;color:#94a3b8;">+</span>';
+        plus.title = 'Add player';
+        plus.onclick = () => {
+            editingProfileId = null;
+            document.getElementById('modal-title').innerText = 'Pick an Emoji';
+            renderAvailableEmojis();
+            document.getElementById('emoji-picker-section').classList.remove('hidden');
+        };
+        grid.appendChild(plus);
+    }
+
+    function renderAvailableEmojis() {
+        const grid = document.getElementById('available-emoji-grid');
+        grid.innerHTML = '';
+        const available = EMOJI_POOL.filter(e => !profiles[e]).slice(0, 8);
+        if (available.length === 0) {
+            grid.innerHTML = '<p style="grid-column:1/-1;color:#94a3b8;font-size:0.85em;">All emoji slots in use.</p>';
+            return;
+        }
+        available.forEach(emoji => {
+            const btn = document.createElement('button');
+            btn.className = 'emoji-btn'; btn.innerText = emoji;
+            btn.onclick = () => handleEmojiClick(emoji);
+            grid.appendChild(btn);
+        });
+    }
+
+    function startEmojiChange(id) {
+        editingProfileId = id;
+        document.getElementById('modal-title').innerText = 'Change ' + id;
+        renderAvailableEmojis();
+        document.getElementById('emoji-picker-section').classList.remove('hidden');
+    }
+
+    function handleEmojiClick(newEmoji) {
+        if (editingProfileId) {
+            const data = profiles[editingProfileId] || {};
+            // Migrate per-user storage keys
+            ['speldle_streak_', 'speldle_last_date_', 'speldle_pb_v1_'].forEach(prefix => {
+                const val = localStorage.getItem(prefix + editingProfileId);
+                if (val) { localStorage.setItem(prefix + newEmoji, val); localStorage.removeItem(prefix + editingProfileId); }
+            });
+            delete profiles[editingProfileId];
+            profiles[newEmoji] = data;
+            saveProfiles();
+            selectProfile(newEmoji);
+            editingProfileId = null;
+        } else {
+            profiles[newEmoji] = {};
+            saveProfiles();
+            selectProfile(newEmoji);
+        }
+    }
+
+    function deleteProfile(id) {
+        if (!confirm('Remove this player? Their data will be lost.')) return;
+        ['speldle_streak_', 'speldle_last_date_', 'speldle_pb_v1_'].forEach(p => localStorage.removeItem(p + id));
+        delete profiles[id];
+        saveProfiles();
+        if (currentProfileId === id) {
+            const next = Object.keys(profiles)[0];
+            if (next) {
+                selectProfile(next);
+            } else {
+                currentProfileId = null;
+                localStorage.removeItem('speldle_active_user_v3');
+                document.getElementById('active-profile').innerText = '👤';
+                updateStreakStat();
+                closeProfileModal();
+                setTimeout(() => showFirstTimeModal(), 200);
+                return;
+            }
+        }
+        renderProfiles();
+        renderAvailableEmojis();
+    }
+
+    function selectProfile(id) {
+        currentProfileId = id;
+        localStorage.setItem('speldle_active_user_v3', id);
+        document.getElementById('active-profile').innerText = id;
+        updateStreakStat();
+        updatePlayerStars();
+        closeProfileModal();
+        // If stats screen is visible, refresh it for the new profile
+        if (!document.getElementById('stats-screen').classList.contains('hidden')) {
+            openStats();
+        }
+    }
+
+    function updatePlayerStars() {
+        const el = document.getElementById('player-stars');
+        if (!el) return;
+        const uid = getCurrentUserId();
+        if (!uid || uid === '👤') { el.innerText = ''; return; }
+        const stars = profiles[uid] && profiles[uid].stars ? profiles[uid].stars : 0;
+        el.innerText = stars > 0 ? `⭐ ${stars} total stars` : '';
+    }
+
+    function saveProfiles() { localStorage.setItem('speldle_profiles_v3', JSON.stringify(profiles)); }
+
+    function getCurrentUserId() { return currentProfileId; }
+
+    function initProfiles() {
+        if (!currentProfileId || !profiles[currentProfileId]) {
+            document.getElementById('active-profile').innerText = '👤';
+            if (Object.keys(profiles).length === 0) {
+                setTimeout(() => showFirstTimeModal(), 400);
+            }
+        } else {
+            document.getElementById('active-profile').innerText = currentProfileId;
+            updateStreakStat();
+            updatePlayerStars();
+        }
+    }
+
+    document.getElementById('profile-modal').addEventListener('click', function(e) {
+        if (e.target === this && this.dataset.unskippable !== 'true') closeProfileModal();
+    });
+
+    // ── PERSONAL BESTS ──
+    function getPBs() {
+        const uid = getCurrentUserId() || 'default';
+        return JSON.parse(localStorage.getItem(`speldle_pb_v1_${uid}`) || '{}');
+    }
+    function savePBs(pbs) { const uid = getCurrentUserId() || 'default'; localStorage.setItem(`speldle_pb_v1_${uid}`, JSON.stringify(pbs)); }
+
+    function recordPB(listKey, listLabel, seconds) {
+        const pbs = getPBs();
+        const key = listKey;
+        const prev = pbs[key];
+        if (!prev || seconds < prev.seconds) {
+            pbs[key] = { label: listLabel, seconds, date: new Date().toLocaleDateString('en-GB') };
+            savePBs(pbs);
+            return true; // new PB
+        }
+        return false;
+    }
+
+    function formatTime(s) {
+        const m = Math.floor(s / 60).toString().padStart(2, '0');
+        const sec = (s % 60).toString().padStart(2, '0');
+        return `${m}:${sec}`;
+    }
+
+    function openStats() {
+        const pbs = getPBs();
+        const el = document.getElementById('stats-content');
+        const entries = Object.entries(pbs).sort((a, b) => a[1].seconds - b[1].seconds);
+
+        if (entries.length === 0) {
+            el.innerHTML = '<div class="no-stats">No personal bests yet —<br>complete a Hard Mode game to set one!</div>';
+        } else {
+            el.innerHTML = entries.map(([key, pb]) => `
+                <div class="pb-row">
+                    <div>
+                        <div class="pb-list-name">${pb.label}</div>
+                        <div class="pb-list-mode">Hard Mode · ${pb.date}</div>
+                    </div>
+                    <div class="pb-time">${formatTime(pb.seconds)}</div>
+                </div>`).join('');
+        }
+
+        document.getElementById('setup-screen').classList.add('hidden');
+        document.getElementById('stats-screen').classList.remove('hidden');
+    }
+
+    function closeStats() {
+        document.getElementById('stats-screen').classList.add('hidden');
+        document.getElementById('setup-screen').classList.remove('hidden');
+    }
+
+    function clearStats() {
+        if (!confirm('Clear all personal bests?')) return;
+        const uid = getCurrentUserId() || 'default'; localStorage.removeItem(`speldle_pb_v1_${uid}`);
+        openStats();
+    }
+
+    // ── LIBRARY ──
+    const savedGroup = document.getElementById('optgroup-saved');
+    const savedContainer = document.getElementById('saved-lists-container');
+
+    function syncLibrary() {
+        const lib = JSON.parse(localStorage.getItem('speldle_lib_v3') || '{}');
+        savedGroup.innerHTML = ''; savedContainer.innerHTML = '';
+        Object.keys(lib).forEach(name => {
+            savedGroup.appendChild(new Option(name, `SAVED_${name}`));
+            const row = document.createElement('div'); row.className = 'saved-list-item';
+            row.innerHTML = `<span class="list-name">${name}</span><button class="del-btn" onclick="deleteList('${name}')">Delete</button>`;
+            savedContainer.appendChild(row);
+        });
+    }
+
+
+    // ── PROFANITY FILTER ──
+    const BLOCKED = new Set([
+        "arse","arsehole","ass","asshole","bastard","bellend","bitch","bollocks",
+        "bollock","boob","boobs","bugger","bullshit","chink","cock","cocks",
+        "cocksucker","coon","crap","cum","cunt","cunts","damn","dick","dicks",
+        "dickhead","dildo","dyke","fag","faggot","fanny","fart","fuck","fucked",
+        "fucker","fucking","fucks","goddamn","homo","jackass","jizz","knob",
+        "knobhead","minge","motherfucker","muff","nigger","nonce","pedo","penis",
+        "piss","prick","pricks","pussy","rape","retard","scrotum","shit","shite",
+        "shits","slut","spastic","spunk","tit","tits","tosser","twat","twats",
+        "vagina","wank","wanker","wankers","whore","willy"
+    ]);
+
+    function containsProfanity(words) {
+        return words.filter(w => BLOCKED.has(w.toLowerCase()));
+    }
+
+    function saveList() {
+        const name = document.getElementById('custom-name').value.trim();
+        const wordsStr = document.getElementById('custom-words').value.trim();
+        if (!name || !wordsStr) return;
+
+        const words = wordsStr.split(/[\s,]+/).filter(w => w.length > 0);
+        const flagged = containsProfanity(words);
+        if (flagged.length > 0) {
+            showSaveError(`Cannot save — inappropriate word(s) found: ${flagged.join(', ')}`);
+            return;
+        }
+
+        let lib = JSON.parse(localStorage.getItem('speldle_lib_v3') || '{}');
+        lib[name] = wordsStr;
+        localStorage.setItem('speldle_lib_v3', JSON.stringify(lib));
+        document.getElementById('custom-name').value = '';
+        document.getElementById('custom-words').value = '';
+        hideSaveError();
+        syncLibrary();
+        document.getElementById('list-selector').value = `SAVED_${name}`;
+        document.getElementById('custom-input-wrap').classList.add('hidden');
+    }
+
+    function showSaveError(msg) {
+        let el = document.getElementById('save-error');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'save-error';
+            el.style.cssText = 'color:#e74c3c;font-size:0.85em;font-weight:600;padding:8px 12px;background:#fee2e2;border-radius:10px;margin-top:4px;';
+            document.getElementById('save-list-btn').insertAdjacentElement('afterend', el);
+        }
+        el.innerText = msg;
+        el.style.display = 'block';
+    }
+
+    function hideSaveError() {
+        const el = document.getElementById('save-error');
+        if (el) el.style.display = 'none';
+    }
+
+    window.deleteList = name => {
+        let lib = JSON.parse(localStorage.getItem('speldle_lib_v3') || '{}');
+        delete lib[name]; localStorage.setItem('speldle_lib_v3', JSON.stringify(lib)); syncLibrary();
+    };
+
+    document.getElementById('toggle-create-btn').onclick = () =>
+        document.getElementById('custom-input-wrap').classList.toggle('hidden');
+    document.getElementById('save-list-btn').onclick = saveList;
+
+    // ── HARD MODE TOGGLE STYLE ──
+    const hardModeCheckbox = document.getElementById('hard-mode');
+    const modeToggleLabel = hardModeCheckbox.closest('label');
+    hardModeCheckbox.addEventListener('change', () => {
+        modeToggleLabel.classList.toggle('active', hardModeCheckbox.checked);
+        localStorage.setItem('speldle_hard_mode', hardModeCheckbox.checked ? '1' : '0');
+    });
+
+    // ── START ──
+    document.getElementById('start-btn').onclick = () => {
+        const val = document.getElementById('list-selector').value;
+        let pool = [];
+        if (val.startsWith('SAVED_')) {
+            const lib = JSON.parse(localStorage.getItem('speldle_lib_v3') || '{}');
+            pool = lib[val.replace('SAVED_', '')].split(/[\s,]+/).filter(w => w.length > 0);
+        } else {
+            pool = BUILTIN[val];
+        }
+        if (!pool || !pool.length) return;
+        lastPool = pool;
+        launchGame(pool);
+    };
+
+    document.getElementById('retry-btn').onclick = () => {
+        if (lastPool) launchGame(lastPool);
+    };
+
+    function launchGame(pool) {
+        activeWords = [...pool].sort(() => 0.5 - Math.random()).slice(0, 10);
+        document.getElementById('setup-screen').classList.add('hidden');
+        document.getElementById('results-screen').classList.add('hidden');
+        document.getElementById('game-screen').classList.remove('hidden');
+
+        const ticker = document.getElementById('ticker');
+        ticker.innerHTML = '';
+        activeWords.forEach(() => {
+            const seg = document.createElement('div'); seg.className = 'ticker-segment'; ticker.appendChild(seg);
+        });
+
+        currentIndex = 0; totalStars = 0; inGameStreak = 0; sessionData = []; seconds = 0;
+        document.getElementById('total-score').innerText = '⭐ 0';
+        document.getElementById('in-game-streak').style.display = 'none';
+
+        const isHard = document.getElementById('hard-mode').checked;
+        const timerEl = document.getElementById('timer-wrap');
+        if (isHard) {
+            timerEl.classList.remove('hidden');
+            document.getElementById('timer').innerText = '00:00';
+            startTimer();
+        } else {
+            timerEl.classList.add('hidden');
+        }
+        startRound();
+    }
+
+    function startTimer() {
+        clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            seconds++;
+            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const s = (seconds % 60).toString().padStart(2, '0');
+            document.getElementById('timer').innerText = `${m}:${s}`;
+        }, 1000);
+    }
+
+    function startRound() {
+        attempts = 0; state = 'READ';
+        currentErrorTypes.clear();
+        document.getElementById('dynamic-key').classList.add('hidden');
+        document.getElementById('dynamic-key').innerHTML = '';
+
+        userInput.disabled = false;
+        document.getElementById('mobile-enter').disabled = false;
+        document.getElementById('word-box').style.color = '#1e293b';
+        document.getElementById('input-area').classList.add('hidden');
+        document.getElementById('hide-btn').classList.remove('hidden');
+        document.getElementById('history').innerHTML = '';
+        userInput.value = '';
+        
+        document.getElementById('progress').innerText = `WORD ${currentIndex + 1}/${activeWords.length}`;
+
+        const isHard = document.getElementById('hard-mode').checked;
+        if (isHard) {
+            // Hard mode: go straight to spell, show word as floating overlay
+            document.getElementById('word-box').classList.add('hidden');
+            goToSpell();
+            flashWordOverlay(activeWords[currentIndex]);
+        } else {
+            document.getElementById('word-box').classList.remove('hidden');
+            document.getElementById('word-box').innerText = activeWords[currentIndex];
+        }
+    }
+
+    function flashWordOverlay(word) {
+        const overlay = document.getElementById('word-overlay');
+        document.getElementById('word-overlay-text').innerText = word;
+        overlay.style.opacity = '1';
+        const holdMs = word.length >= 8 ? 1000 : 750;
+        setTimeout(() => { overlay.style.opacity = '0'; }, holdMs);
+    }
+
+    function goToSpell(initialChar = '') {
+        state = 'SPELL'; inputLocked = true;
+        document.getElementById('word-box').classList.add('hidden');
+        document.getElementById('input-area').classList.remove('hidden'); // reveal input first
+        document.getElementById('hide-btn').classList.add('hidden');
+        speak(activeWords[currentIndex]);
+        userInput.removeAttribute('readonly');
+        userInput.focus(); // focus after input is visible — required for iOS
+        if (initialChar.length === 1) userInput.value = initialChar;
+        inputLocked = false;
+    }
+
+    function checkWord() {
+        if (state !== 'SPELL' || inputLocked) return;
+        const g = userInput.value.trim().toLowerCase();
+        const t = activeWords[currentIndex].toLowerCase();
+        if (!g) return;
+
+        if (g === t) {
+            inputLocked = true;
+            userInput.disabled = true; userInput.blur();
+            document.getElementById('mobile-enter').disabled = true;
+
+            const stars = attempts === 0 ? 3 : attempts === 1 ? 2 : 1;
+            if (attempts === 0) inGameStreak++; else inGameStreak = 0;
+            totalStars += stars;
+            sessionData.push({ word: activeWords[currentIndex], stars });
+            document.getElementById('total-score').innerText = `⭐ ${totalStars}`;
+            document.getElementById('ticker').children[currentIndex].style.background = 'var(--correct)';
+            updateInGameStreak();
+            addHistoryRow(g, t, true);
+            fireConfetti(stars * 40);
+            setTimeout(() => {
+                currentIndex++;
+                if (currentIndex < activeWords.length) startRound(); else endGame();
+            }, 1800);
+        } else {
+            attempts++;
+            inGameStreak = 0; updateInGameStreak();
+            addHistoryRow(g, t);
+            updateDynamicKey();
+            if (attempts >= 6) {
+                inputLocked = true;
+                userInput.disabled = true; userInput.blur();
+                document.getElementById('mobile-enter').disabled = true;
+                sessionData.push({ word: activeWords[currentIndex], stars: 0 });
+                document.getElementById('ticker').children[currentIndex].style.background = 'var(--wrong)';
+                // Show correct word in normal mode only
+                if (!document.getElementById('hard-mode').checked) {
+                    document.getElementById('word-box').classList.remove('hidden');
+                    document.getElementById('word-box').innerText = activeWords[currentIndex];
+                    document.getElementById('word-box').style.color = 'var(--wrong)';
+                }
+                setTimeout(() => {
+                    currentIndex++;
+                    if (currentIndex < activeWords.length) startRound(); else endGame();
+                }, 3000);
+            } else {
+                speak(t);
+                userInput.value = '';
+                userInput.focus();
+            }
+        }
+    }
+
+    function updateInGameStreak() {
+        const sd = document.getElementById('in-game-streak');
+        if (inGameStreak >= 3) { sd.innerText = `${inGameStreak} 🔥`; sd.style.display = 'inline'; }
+        else { sd.style.display = 'none'; }
+    }
+
+    function updateDynamicKey() {
+        const keyBox = document.getElementById('dynamic-key');
+        if (currentErrorTypes.size === 0) { keyBox.classList.add('hidden'); return; }
+        keyBox.innerHTML = ''; keyBox.classList.remove('hidden');
+        currentErrorTypes.forEach(type => {
+            const item = document.createElement('div');
+            item.className = 'key-item';
+            item.style.backgroundColor = `var(--${type})`;
+            item.innerText = KEY_LABELS[type];
+            keyBox.appendChild(item);
+        });
+    }
+
+    function endGame() {
+        clearInterval(timerInterval);
+        state = 'FINISHED';
+        userInput.disabled = true; userInput.blur();
+        document.getElementById('mobile-enter').disabled = true;
+
+        finishSessionStreak();
+
+        // Update profile star count
+        if (currentProfileId && profiles[currentProfileId] !== undefined) {
+            if (!profiles[currentProfileId].stars) profiles[currentProfileId].stars = 0;
+            profiles[currentProfileId].stars += totalStars;
+            saveProfiles();
+            updatePlayerStars();
+        }
+
+        // Record personal best if hard mode
+        if (document.getElementById('hard-mode').checked) {
+            const val = document.getElementById('list-selector').value;
+            const sel = document.getElementById('list-selector');
+            const label = sel.options[sel.selectedIndex].text;
+            const isNewPB = recordPB(val, label, seconds);
+            if (isNewPB) {
+                document.getElementById('final-time').innerHTML =
+                    `⏱ Time: ${formatTime(seconds)} <span style="background:var(--correct);color:white;border-radius:6px;padding:2px 8px;font-size:0.75em;font-weight:800;margin-left:4px;">NEW PB!</span>`;
+            }
+        }
+
+        document.getElementById('game-screen').classList.add('hidden');
+        document.getElementById('results-screen').classList.remove('hidden');
+        document.getElementById('final-star-count').innerText = `Total ⭐ ${totalStars}`;
+
+        if (!document.getElementById('hard-mode').checked) document.getElementById('final-time').innerText = '';
+
+        document.getElementById('results-list').innerHTML = sessionData.map(i =>
+            `<div class="result-item"><strong>${i.word}</strong><span>${'⭐'.repeat(i.stars)}${i.stars === 0 ? '❌' : ''}</span></div>`
+        ).join('');
+
+        fireConfetti(200);
+    }
+
+    // ── KEYBOARD ──
+    window.addEventListener('keydown', e => {
+        if (state === 'FINISHED') { e.preventDefault(); e.stopPropagation(); return false; }
+        if (e.key === 'Enter') {
+            if (state === 'READ') { e.preventDefault(); goToSpell(); }
+            else if (state === 'SPELL') { e.preventDefault(); checkWord(); }
+        }
+        if (state === 'READ' && document.activeElement.tagName !== 'SELECT' &&
+            document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.type !== 'text') {
+            if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) { e.preventDefault(); goToSpell(e.key); }
+        }
+    }, true);
+
+    document.getElementById('mobile-enter').onclick = () => {
+        checkWord();
+        // Refocus synchronously for iOS — state is already updated by checkWord
+        if (state === 'SPELL') userInput.focus();
+    };
+    document.getElementById('hide-btn').onclick = () => goToSpell();
+    document.getElementById('say-again-btn').onclick = () => { speak(activeWords[currentIndex]); userInput.focus(); };
+
+    // ── DAY STREAK ──
+    function updateStreakStat() {
+        const uid = getCurrentUserId() || 'default';
+        const s = parseInt(localStorage.getItem(`speldle_streak_${uid}`) || '0');
+        const el = document.getElementById('streak-stat');
+        if (s === 0) { el.innerHTML = ''; el.style.display = 'none'; return; }
+        el.style.display = '';
+        const fires = Math.min(s, 3);
+        const left = '🔥 '.repeat(fires).trimEnd();
+        const right = ' 🔥'.repeat(fires).trimStart();
+        el.innerHTML = `${left} &nbsp; ${s} DAY STREAK &nbsp; ${right}`;
+    }
+
+    function finishSessionStreak() {
+        const uid = getCurrentUserId() || 'default';
+        const now = new Date(), last = localStorage.getItem(`speldle_last_date_${uid}`);
+        let s = parseInt(localStorage.getItem(`speldle_streak_${uid}`) || '0'), inc = false;
+        if (!last) { s = 1; inc = true; }
+        else {
+            const diff = Math.floor((now.setHours(0,0,0,0) - new Date(last).setHours(0,0,0,0)) / 86400000);
+            if (diff === 1) { s++; inc = true; } else if (diff > 1) { s = 1; inc = true; }
+        }
+        if (inc) {
+            localStorage.setItem(`speldle_streak_${uid}`, s);
+            localStorage.setItem(`speldle_last_date_${uid}`, new Date().toISOString());
+            document.getElementById('popup-streak-count').innerText = s;
+            document.getElementById('streak-popup').classList.remove('hidden');
+            fireConfetti(150);
+        } else {
+            localStorage.setItem(`speldle_last_date_${uid}`, new Date().toISOString());
+        }
+        updateStreakStat();
+    }
+
+    window.closeStreakPopup = () => document.getElementById('streak-popup').classList.add('hidden');
+
+    // ── TTS ──
+    function speak(t) { const m = new SpeechSynthesisUtterance(t); m.lang = 'en-GB'; window.speechSynthesis.speak(m); }
+
+    // ── ALIGNMENT FEEDBACK ──
+    function getAlignmentFeedback(guess, target) {
+        const n = guess.length, m = target.length;
+        const dp = Array.from({ length: n + 1 }, () => Array(m + 1).fill(0));
+        for (let i = 0; i <= n; i++) dp[i][0] = i;
+        for (let j = 0; j <= m; j++) dp[0][j] = j;
+        for (let i = 1; i <= n; i++)
+            for (let j = 1; j <= m; j++)
+                dp[i][j] = guess[i-1] === target[j-1] ? dp[i-1][j-1] : Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1]) + 1;
+
+        let i = n, j = m, res = [];
+        while (i > 0 || j > 0) {
+            if (i > 0 && j > 0 && guess[i-1] === target[j-1]) {
+                res.unshift({ c: guess[i-1], t: 'correct' }); i--; j--;
+            } else if (i > 1 && j > 1 && guess[i-1] === target[j-2] && guess[i-2] === target[j-1]) {
+                res.unshift({ c: guess[i-1], t: 'swap' });
+                res.unshift({ c: guess[i-2], t: 'swap' });
+                currentErrorTypes.add('swap'); i -= 2; j -= 2;
+            } else if (j > 0 && (i === 0 || dp[i][j-1] <= dp[i-1][j-1] && dp[i][j-1] <= dp[i-1][j])) {
+                res.unshift({ c: '?', t: 'missing' }); currentErrorTypes.add('missing'); j--;
+            } else if (i > 0 && (j === 0 || dp[i-1][j] <= dp[i-1][j-1])) {
+                res.unshift({ c: guess[i-1], t: 'extra' }); currentErrorTypes.add('extra'); i--;
+            } else {
+                res.unshift({ c: guess[i-1], t: 'wrong' }); currentErrorTypes.add('wrong'); i--; j--;
+            }
+        }
+        return res;
+    }
+
+    function addHistoryRow(guess, target, perfect = false) {
+        const row = document.createElement('div');
+        row.className = 'feedback-row';
+        const fb = perfect ? [...target].map(c => ({ c, t: 'correct' })) : getAlignmentFeedback(guess, target);
+        fb.forEach(item => {
+            const tile = document.createElement('div');
+            tile.className = 'tile'; tile.innerText = item.c;
+            tile.style.backgroundColor = `var(--${item.t})`;
+            row.appendChild(tile);
+        });
+        document.getElementById('history').prepend(row);
+    }
+
+    // ── CONFETTI ──
+    const canvas = document.getElementById('confetti-canvas'), ctx = canvas.getContext('2d');
+    let confetti = [];
+    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    window.onresize = resize; resize();
+    class Piece {
+        constructor(x, y) {
+            this.x = x; this.y = y; this.size = (Math.random() * 8) + 4;
+            this.color = ['#f1c40f','#e67e22','#e74c3c','#3498db','#2ecc71'][Math.floor(Math.random()*5)];
+            this.speedX = (Math.random() * 6) - 3; this.speedY = (Math.random() * -10) - 5; this.gravity = 0.3;
+        }
+        update() { this.x += this.speedX; this.y += this.speedY; this.speedY += this.gravity; }
+        draw() { ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y, this.size, this.size); }
+    }
+    function fireConfetti(amount) { for (let i = 0; i < amount; i++) confetti.push(new Piece(window.innerWidth/2, window.innerHeight/2)); }
+    function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        confetti.forEach((p, i) => { p.update(); p.draw(); if (p.y > canvas.height) confetti.splice(i, 1); });
+        requestAnimationFrame(animate);
+    }
+    animate();
+    initProfiles();
+    updateStreakStat();
+    syncLibrary();
+    // Restore hard mode from storage
+    const savedHardMode = localStorage.getItem('speldle_hard_mode') === '1';
+    hardModeCheckbox.checked = savedHardMode;
+    modeToggleLabel.classList.toggle('active', savedHardMode);
+</script>
+</body>
+</html>
